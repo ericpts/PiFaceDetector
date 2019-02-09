@@ -1,6 +1,7 @@
 from sklearn.datasets import fetch_lfw_people
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.feature_extraction.image import PatchExtractor
 from skimage import data, transform, color, feature
 import skimage as sk
@@ -8,21 +9,27 @@ from pathlib import Path
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-import cifar10
 import itertools
 from sklearn.model_selection import cross_val_score
 from sklearn.naive_bayes import GaussianNB
 import pickle
-
+from tqdm import tqdm
+from sklearn.svm import LinearSVC
+from sklearn.model_selection import GridSearchCV
 
 SEED = 0
 HEIGHT = 62
 WIDTH = 47
-NPATCHES = 500
-SCALES = [0.5, 1.0, 2.0]
+
+PATCH_SIZE = (HEIGHT, WIDTH)
+
+NPATCHES = 50
+SCALES = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0]
+
 
 def resize(img):
-    return transform.resize(img, (HEIGHT, WIDTH), mode='reflect', anti_aliasing=True)
+    return transform.resize(
+        img, (HEIGHT, WIDTH), mode='reflect', anti_aliasing=True)
 
 
 def random_rotation(img):
@@ -39,35 +46,64 @@ def horizontal_flip(img):
 
 
 def random_transformations(img):
+    img = sk.img_as_float64(img)
     return [
         img,
-        horizontal_flip(img),
-        random_noise(img),
-        random_noise(img),
-        random_rotation(img),
-        random_rotation(img),
-        ]
+        # horizontal_flip(img),
+        # random_noise(img),
+        # random_noise(img),
+        # random_rotation(img),
+        # random_rotation(img),
+    ]
 
 
 def plot_random_images(X, fname):
-    fig, ax = plt.subplots(6, 10)
+    nimages = X.shape[0]
+    n = 1
+    while n * n <= nimages and n < 6:
+        n += 1
+    n -= 1
+
+    fig, ax = plt.subplots(3, 3, figsize=PATCH_SIZE)
+
+    used = {}
+
     for i, axi in enumerate(ax.flat):
-        axi.imshow(X[random.randint(0, nimages - 1)], cmap='gray')
+        if len(used) == nimages:
+            break
+
+        idx = random.randint(0, nimages - 1)
+        while idx in used:
+            idx = random.randint(0, nimages - 1)
+
+        used[idx] = True
+        axi.imshow(X[idx], cmap='gray')
         axi.axis('off')
     plt.savefig(fname)
+
 
 def extract_patches(img, npatches, scale):
     patch_size = (HEIGHT, WIDTH)
     extracted_patch_size = tuple((scale * np.array(patch_size)).astype(int))
-    extractor = PatchExtractor(patch_size = extracted_patch_size, max_patches=npatches, random_state=SEED)
-    patches = extractor.transform(img[np.newaxis])
-    if scale != 1.0:
-        patches = np.array([resize(patch) for patch in patches])
-    return patches
+
+    extractor = PatchExtractor(
+        patch_size=extracted_patch_size,
+        max_patches=npatches,
+        random_state=SEED)
+    try:
+        patches = extractor.transform(img[np.newaxis])
+        if scale != 1.0:
+            patches = np.array([resize(patch) for patch in patches])
+        return patches
+    except ValueError:
+        return []
+
 
 def dataset_cache(dataset_name):
     fname = 'datasets/{}_data.npz'.format(dataset_name)
+
     def decorator(fn):
+
         def fn_wrapper():
             p = Path(fname)
 
@@ -85,100 +121,82 @@ def dataset_cache(dataset_name):
                 np.savez_compressed(p, X=X, y=y)
 
             return (X, y)
+
         return fn_wrapper
+
     return decorator
 
-@dataset_cache("lfw")
-def load_lfw():
-    lfw_people = fetch_lfw_people()
 
-    n_samples, h, w = lfw_people.images.shape
-
-    assert (h, w) == (HEIGHT, WIDTH)
-
-    X = np.reshape(lfw_people.data, (n_samples, HEIGHT, WIDTH))
-
-    # Now do some augmentation.
-    X = np.concatenate(
-        [random_transformations(img) for img in X]
-    )
-
-    y = np.array([1] * X.shape[0])
-
-    assert (X.shape[0] == y.shape[0])
-
-    return (X, y)
-
-
-
-@dataset_cache("sklearn")
 def load_sklearn():
-    neg_imgs_to_use = ['camera', 'text', 'coins', 'moon',
-                'page', 'clock', 'immunohistochemistry',
-                'chelsea', 'coffee', 'hubble_deep_field']
-    imgs = [color.rgb2gray(getattr(data, name)())
-            for name in neg_imgs_to_use]
+    neg_imgs_to_use = [
+        'camera', 'text', 'coins', 'moon', 'page', 'clock',
+        'immunohistochemistry', 'chelsea', 'coffee', 'hubble_deep_field'
+    ]
+    imgs = [color.rgb2gray(getattr(data, name)()) for name in neg_imgs_to_use]
 
-    X = np.vstack([extract_patches(im, NPATCHES, scale) for im in imgs for scale in SCALES])
+    patches = [
+        extract_patches(im, NPATCHES, scale) for im in imgs for scale in SCALES
+    ]
+    patches = [p for p in patches if len(p) > 0]
+
+    X = np.vstack(patches)
     nimages = X.shape[0]
     y = np.array([0] * nimages)
 
-    return (X, y)
-
-@dataset_cache("cifar10")
-def load_cifar10():
-    cifar10.maybe_download_and_extract()
-
-    fst = cifar10.load_training_data()[0]
-    snd = cifar10.load_test_data()[0]
-
-    raw_imgs = np.concatenate((fst, snd))
-    X = np.array([
-        resize(color.rgb2gray(img)) for img in raw_imgs])
-
-    nimages = X.shape[0]
-    y = np.array([0] * nimages)
+    plot_random_images(X, "sklearn_fig.png")
 
     return (X, y)
 
 
-@dataset_cache("imagenet")
-def load_imagenet():
-    root = Path('datasets/imagenet/valid')
-
-    at = 0
+def load_directory(root):
     images = []
-    for p in root.glob('**/*.png'):
+    for p in tqdm(
+            itertools.chain(
+                root.glob('**/*.jpg'),
+                root.glob('**/*.png'),
+            )):
         img = sk.io.imread(p)
         img = color.rgb2gray(img)
-        img = resize(img)
         images.append(img)
 
-    X = np.concatenate(
-        [random_transformations(img) for img in images]
-    )
+    return images
 
+
+def load_positive_directory():
+    print('Loading the positive directory')
+
+    root = Path('datasets/faces/')
+    images = load_directory(root)
+    X = np.array([resize(img) for img in images])
     y = np.array([1] * X.shape[0])
+
+    plot_random_images(X, "positive_directory_fig.png")
 
     return (X, y)
 
 
-@dataset_cache("yale")
-def load_yale():
-    root = Path('datasets/CroppedYale/')
+def load_negative_directory():
+    print('Loading the negative directory')
 
-    images = []
-    for p in root.glob('**/*.pgm'):
-        img = sk.io.imread(p)
-        img = color.rgb2gray(img)
-        img = resize(img)
-        images.append(img)
+    root = Path('datasets/nonfaces/')
+    images = load_directory(root)
 
-    X = np.concatenate(
-        [random_transformations(img) for img in images]
-    )
+    X = []
+    for img in images:
+        if img.shape > 2 * PATCH_SIZE:
+            patches = [
+                extract_patches(img, NPATCHES, scale) for scale in SCALES
+            ]
 
-    y = np.array([1] * X.shape[0])
+            for p in patches:
+                X.extend(p)
+        else:
+            x.append(resize(img))
+
+    X = np.stack(X)
+    y = np.array([0] * X.shape[0])
+
+    plot_random_images(X, "negative_directory_fig.png")
 
     return (X, y)
 
@@ -188,14 +206,13 @@ def positive_dataset():
     X = []
     y = []
 
-    for dset in [load_lfw, load_yale]:
+    for dset in [load_positive_directory]:
         (X_now, y_now) = dset()
         X.extend(X_now)
         y.extend(y_now)
 
     X = np.array(X)
     y = np.array(y)
-
 
     assert X.dtype == np.float64
     assert X.shape[0] == y.shape[0]
@@ -207,22 +224,19 @@ def positive_dataset():
 def negative_dataset():
     X = []
     y = []
-    for dset in [
-            load_sklearn,
-            load_cifar10,
-            # load_imagenet,
-            ]:
+    for dset in [load_sklearn, load_negative_directory]:
         (X_now, y_now) = dset()
         X.extend(X_now)
         y.extend(y_now)
 
-    X = np.array(X)
-    y = np.array(y)
+    X = np.stack(X)
+    y = np.stack(y)
 
     assert X.shape[0] == y.shape[0]
     return X, y
 
-@dataset_cache("all_dataset")
+
+@dataset_cache("hog_dataset")
 def all_dataset():
     X_pos, y_pos = positive_dataset()
     X_neg, y_neg = negative_dataset()
@@ -239,6 +253,46 @@ def all_dataset():
 
     return (X, y)
 
+
+def svm_grid_search(X, y):
+    grid = GridSearchCV(LinearSVC(),
+                        {'C': [1.0, 2.0, 4.0, 8.0]},
+                        n_jobs=-1,
+                        cv=4,
+                        verbose=3)
+    grid.fit(X, y)
+
+    model = grid.best_estimator_
+
+    print('Mean SVM CV score of {}'.format(
+        np.mean(cross_val_score(model, X, y, cv=10))))
+
+    model = model.fit(X, y)
+
+    with open('svm_model.bin', 'wb') as f:
+        pickle.dump(model, f)
+
+
+def ada_boost_grid_search(X, y):
+    # grid = GridSearchCV(AdaBoostClassifier(),
+    #                     {'n_estimators': [10, 50, 100],
+    #                     },
+    #                     cv=4,
+    #                     n_jobs=-1,
+    #                     verbose=3)
+    # grid.fit(X, y)
+    # model = grid.best_estimator_
+
+    model = AdaBoostClassifier(n_estimators=100)
+
+    # print('Mean AdaBoost CV score of {}'.format(np.mean(cross_val_score(model, X, y, cv=10))))
+
+    model = model.fit(X, y)
+
+    with open('ada_model.bin', 'wb') as f:
+        pickle.dump(model, f)
+
+
 def main():
     random.seed(SEED)
 
@@ -247,16 +301,10 @@ def main():
     print('We have {} positive examples.'.format(np.count_nonzero(y == 1)))
     print('We have {} negative examples.'.format(np.count_nonzero(y == 0)))
 
-    print('Mean CV score of {}'.format(
-        np.mean(cross_val_score(GaussianNB(), X, y, cv=10))))
+    ada_boost_grid_search(X, y)
+    # svm_grid_search(X, y)
 
-    model = GaussianNB()
-    model.fit(X, y)
-
-    with open('model.bin', 'wb') as f:
-        pickle.dump(model, f)
 
 
 if __name__ == '__main__':
     main()
-
