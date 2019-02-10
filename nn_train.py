@@ -44,7 +44,7 @@ def keras_model(X, y):
 
     model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=3)
 
-    with open('nn_model.bin', 'wb') as f:
+    with open('models/nn_model.bin', 'wb') as f:
         pickle.dump(model, f)
 
 def main():

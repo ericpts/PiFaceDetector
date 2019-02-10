@@ -33,7 +33,7 @@ def svm_grid_search(X, y):
 
     model = model.fit(X, y)
 
-    with open('svm_model.bin', 'wb') as f:
+    with open('models/svm_model.bin', 'wb') as f:
         pickle.dump(model, f)
 
 
@@ -53,7 +53,7 @@ def ada_boost_grid_search(X, y):
 
     model = model.fit(X, y)
 
-    with open('ada_model.bin', 'wb') as f:
+    with open('models/ada_model.bin', 'wb') as f:
         pickle.dump(model, f)
 
 
