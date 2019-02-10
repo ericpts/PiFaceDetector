@@ -16,6 +16,7 @@ import pickle
 from tqdm import tqdm
 from sklearn.svm import LinearSVC
 from sklearn.model_selection import GridSearchCV
+from keras.utils import to_categorical
 
 SEED = 0
 HEIGHT = 62
@@ -243,6 +244,10 @@ def dataset_no_hog():
 
     X = np.concatenate((X_pos, X_neg))
     y = np.concatenate((y_pos, y_neg))
+
+    X = np.reshape(X, (-1, HEIGHT, WIDTH, 1))
+    y = to_categorical(y)
+
     return (X, y)
 
 

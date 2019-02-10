@@ -25,9 +25,6 @@ from keras.layers import Dense, Conv2D, Flatten
 def keras_model(X, y):
     model = Sequential()
 
-    X = np.reshape(X, (-1, HEIGHT, WIDTH, 1))
-    y = to_categorical(y)
-
     model.add(Conv2D(64, kernel_size=3, activation='relu',
         input_shape=(HEIGHT, WIDTH, 1)))
     model.add(Conv2D(32, kernel_size=3, activation='relu'))
@@ -52,8 +49,8 @@ def main():
 
     (X, y) = dataset_no_hog()
 
-    print('We have {} positive examples.'.format(np.count_nonzero(y == 1)))
-    print('We have {} negative examples.'.format(np.count_nonzero(y == 0)))
+    print('We have {} positive examples.'.format(np.count_nonzero(y[:, 1])))
+    print('We have {} negative examples.'.format(np.count_nonzero(y[:, 0])))
 
     keras_model(X, y)
 
