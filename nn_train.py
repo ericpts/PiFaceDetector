@@ -123,7 +123,8 @@ def main():
             generator=training_generator,
             validation_data=validation_generator,
             use_multiprocessing=True,
-            workers=2
+            workers=2,
+            epochs=3
             )
 
 
