@@ -1,5 +1,6 @@
 from sklearn.datasets import fetch_lfw_people
 from sklearn.model_selection import train_test_split
+import json
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.feature_extraction.image import PatchExtractor
@@ -246,7 +247,6 @@ def dataset_no_hog():
     y = np.concatenate((y_pos, y_neg))
 
     X = np.reshape(X, (-1, HEIGHT, WIDTH, 1))
-    y = to_categorical(y)
 
     return (X, y)
 
@@ -267,4 +267,20 @@ def dataset_hog():
     assert X.dtype == np.float64
 
     return (X, y)
+
+
+def store_dataset_to_folder(X, y, folder: Path):
+    labels = {
+            'id_{}'.format(i): y[i]
+            for i in range(len(y))
+    }
+
+    p = folder / 'labels.txt'
+    with open(p, 'wb') as f:
+        pickle.dump(labels, f)
+
+    for i in range(len(X)):
+        p = folder / ('id_{}.npz'.format(i))
+        np.savez_compressed(p, X[i])
+
 
