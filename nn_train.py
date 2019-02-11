@@ -185,7 +185,9 @@ def main():
 
     model = keras.models.Model(inputs=input, outputs=predictions)
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=tf.train.RMSPropOptimizer(learning_rate=0.01),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
 
     print(model.summary())
 
