@@ -79,10 +79,57 @@ class DataGenerator(keras.utils.Sequence):
         return X, keras.utils.to_categorical(y, num_classes=self.n_classes)
 
 
+def identitiy(f, k):
+    def fn(input):
+        [f1, f2, f3] = f
+
+        X = keras.layers.Conv2D(f1, kernel_size=1)(input)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+        X = keras.layers.Activation('relu')(X)
+
+        X = keras.layers.Conv2D(f2, kernel_size=k, padding='same')(X)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+        X = keras.layers.Activation('relu')(X)
+
+        X = keras.layers.Conv2D(f3, kernel_size=1)(X)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+
+        X_input = input
+
+        X = keras.layers.Add()([X, X_input])
+        X = keras.layers.Activation('relu')(X)
+        return X
+    return fn
+
+
+def convolutional(f, k, s):
+    def fn(input):
+        [f1, f2, f3] = f
+
+        X = keras.layers.Conv2D(f1, kernel_size=1, strides=(s, s))(input)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+        X = keras.layers.Activation('relu')(X)
+
+        X = keras.layers.Conv2D(f2, kernel_size=k, padding='same')(X)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+        X = keras.layers.Activation('relu')(X)
+
+        X = keras.layers.Conv2D(f3, kernel_size=1)(X)
+        X = keras.layers.BatchNormalization(axis=3)(X)
+
+        X_input = keras.layers.Conv2D(f3, kernel_size=1, strides=(s, s))(input)
+        X_input = keras.layers.BatchNormalization(axis=3)(X_input)
+
+        X = keras.layers.Add()([X, X_input])
+        X = keras.layers.Activation('relu')(X)
+        return X
+    return fn
+
+
 def main():
 
     params = {'dim': (HEIGHT,WIDTH),
-          'batch_size': 64,
+          'batch_size': 128,
           'n_classes': 2,
           'n_channels': 1,
           'shuffle': True}
@@ -95,7 +142,7 @@ def main():
     all_ids = list(labels.keys())
     random.shuffle(all_ids)
 
-    percentage_validation = 0.25
+    percentage_validation = 0.20
 
     val_length = int(percentage_validation * len(all_ids))
     train_length = len(all_ids) - val_length
@@ -109,15 +156,24 @@ def main():
     validation_generator = DataGenerator(partition['validation'], labels, **params)
 
 
-    model = Sequential()
-    model.add(Conv2D(64, kernel_size=3, activation='relu',
-        input_shape=(HEIGHT, WIDTH, 1)))
-    model.add(Conv2D(32, kernel_size=3, activation='relu'))
-    model.add(Flatten())
-    model.add(Dense(2, activation='softmax'))
-    model.compile(optimizer='adam', loss='categorical_crossentropy',
-            metrics=['accuracy'])
+    input = keras.layers.Input(shape=(HEIGHT, WIDTH, 1))
 
+    X = keras.layers.Conv2D(64, kernel_size=7, strides=2)(input)
+    X = keras.layers.BatchNormalization(axis=3)(X)
+    X = keras.layers.Activation('relu')(X)
+
+    X = convolutional([64, 32, 32], 3, 1)(X)
+    X = identitiy([32, 32, 32], 3)(X)
+    X = identitiy([32, 32, 32], 3)(X)
+
+    flat = keras.layers.Flatten()(X)
+
+    predictions = Dense(2, activation='softmax')(flat)
+
+    model = keras.models.Model(inputs=input, outputs=predictions)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+    print(model.summary())
 
     model.fit_generator(
             generator=training_generator,
