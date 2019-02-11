@@ -1,4 +1,7 @@
 from sklearn.datasets import fetch_lfw_people
+import multiprocessing
+import os
+import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from keras.utils import to_categorical
 from sklearn.model_selection import GridSearchCV
@@ -126,10 +129,22 @@ def convolutional(f, k, s):
     return fn
 
 
+def to_tpu(model):
+    TPU_WORKER = 'grpc://' + os.environ['COLAB_TPU_ADDR']
+    tf.logging.set_verbosity(tf.logging.INFO)
+
+    tpu_model = tf.contrib.tpu.keras_to_tpu_model(
+        training_model,
+        strategy=tf.contrib.tpu.TPUDistributionStrategy(
+            tf.contrib.cluster_resolver.TPUClusterResolver(TPU_WORKER)))
+
+    return tpu_model
+
+
 def main():
 
     params = {'dim': (HEIGHT,WIDTH),
-          'batch_size': 128,
+          'batch_size': 128 * 8,
           'n_classes': 2,
           'n_channels': 1,
           'shuffle': True}
@@ -171,18 +186,23 @@ def main():
     predictions = Dense(2, activation='softmax')(flat)
 
     model = keras.models.Model(inputs=input, outputs=predictions)
+
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     print(model.summary())
+
+    if 'COLAB_TPU_ADDR' in os.environ:
+        model = to_tpu(model)
 
     model.fit_generator(
             generator=training_generator,
             validation_data=validation_generator,
             use_multiprocessing=True,
-            workers=2,
-            epochs=3
+            workers=multiprocessing.cpu_count(),
+            epochs=3,
             )
 
+    model.save_weights('models/nn_model.bin', )
 
     with open('models/nn_model.bin', 'wb') as f:
         pickle.dump(model, f)
