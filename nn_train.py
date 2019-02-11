@@ -162,9 +162,9 @@ def main():
     X = keras.layers.BatchNormalization(axis=3)(X)
     X = keras.layers.Activation('relu')(X)
 
-    X = convolutional([64, 32, 32], 3, 1)(X)
-    X = identitiy([32, 32, 32], 3)(X)
-    X = identitiy([32, 32, 32], 3)(X)
+    X = convolutional([64, 64, 32], 3, 1)(X)
+    X = identitiy([64, 64, 32], 3)(X)
+    X = identitiy([64, 64, 32], 3)(X)
 
     flat = keras.layers.Flatten()(X)
 
