@@ -134,7 +134,7 @@ def to_tpu(model):
     tf.logging.set_verbosity(tf.logging.INFO)
 
     tpu_model = tf.contrib.tpu.keras_to_tpu_model(
-        training_model,
+        model,
         strategy=tf.contrib.tpu.TPUDistributionStrategy(
             tf.contrib.cluster_resolver.TPUClusterResolver(TPU_WORKER)))
 
