@@ -24,9 +24,7 @@ from sklearn.model_selection import GridSearchCV
 from load_dataset import *
 import pickle
 
-import keras
-from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten
+from tensorflow import keras
 
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
@@ -183,7 +181,7 @@ def main():
 
     flat = keras.layers.Flatten()(X)
 
-    predictions = Dense(2, activation='softmax')(flat)
+    predictions = keras.layers.Dense(2, activation='softmax')(flat)
 
     model = keras.models.Model(inputs=input, outputs=predictions)
 
